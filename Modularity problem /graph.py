@@ -1,15 +1,50 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 from threading import Thread
-from itertools import chain
-import re
-from os import listdir, path
 import numpy as np
 
-# Abstrakty - to jest potrzebne bardziej do 
-# rozwijania roznych sposobow przetwarzania danych 
-# az do otrzymania struktury z ktorej da sie policzyc genus
+
+class ProteinList(list):
+    '''Jedna z najlepszych klas jakie napisałem. 
+    Bazuje na rozszerzeniu możliwości listy. 
+    Cleaning operation for Your two columns data.
+    '''
+    def __init__(self, members):
+        super().__init__(members)
+
+    def numpy_array(self):
+        return np.array(self)
+
+    def compute_info(self):
+        array = self.numpy_array()
+        #chords = len(array)
+        maxi = array.max()
+        mini = array.min()
+        length = maxi - mini + 1
+        return array.min(), array.max(), length, len(array)
+
+    def change(self):
+        result = [[row[1], row[0]] if row[0] > row[
+            1] else [row[0], row[1]] for row in self]
+        return ProteinList(result)
+
+    def rem_same_chords(self):
+        result = [list(x) for x in set(tuple(x) for x in self)]
+        return ProteinList(sorted(result))
+
+    def rem_inout(self):
+        return ProteinList([row for row in self if row[0] != row[1]])
+
+    def zero_rem(self):
+        result = self.numpy_array()
+        if 0 in result:
+            result = result + 1
+        return ProteinList(result.tolist())
+
+    def clean(self):
+        return ProteinList(self.change().rem_same_chords().rem_inout().zero_rem())
+
+#======================================
+# Two columns data analysis - Graph
+#======================================
 
 class InputData(object):
     '''Abstract class of Input Data.
@@ -23,11 +58,8 @@ class InputData(object):
         raise NotImplementedError
 
     @classmethod
-    def generate_inputs(cls, config):
+    def generate_inputs(cls):
         ''' abstract of generate_inputs method
-        All you need is config dictionary with keys:
-        directory - path for your data directory
-        end_file - type of your file
         '''
         raise NotImplementedError
 
@@ -43,10 +75,10 @@ class Worker(object):
         raise NotImplementedError
 
     @classmethod
-    def create_workers(cls, input_class, config):
+    def create_workers(cls, input_class, graphs, names):
         ''' workers creator'''
         workers = []
-        for input_data in input_class.generate_inputs(config):
+        for input_data in input_class.generate_inputs(graphs, names):
             workers.append(cls(input_data))
         return workers
 
@@ -69,6 +101,7 @@ class Worker(object):
     @staticmethod
     def przelicznik(tab):
         ''' remove empty spots'''
+        from itertools import chain
         jeden = list(chain.from_iterable((row[0], row[1]) for row in tab))
         for i in range(1, max(jeden)):
             if i not in jeden and i < max(jeden):
@@ -179,120 +212,36 @@ class Worker(object):
         # print "Number of boundaries: %i, genus: %i" % (r,genus)
         return int(genus)
 
-    
-# wielowatkowosc - ciekawe czy dziala ? 
-class FactorizeThread(Thread):
-    ''' multi thread for Worker.map() method'''
-    def __init__(self, worker):
-        super().__init__()
-        self.worker = worker
 
-    def run(self):
-        self.worker = self.worker.map()
-
-#======================================
-# Two columns data analysis - Proteins
-#======================================
-
-# analizy dla protein 
+# analizy dla grafów 
 # dane tylko w dwoch kolumnach
-class ProteinData(InputData):
-    '''Load files from directory and 
-    made two columns structure. 
-    Don't use this class separately. 
+# =================================
+# Graph DATA
+# =================================
+class GraphData(InputData):
+    '''Load list for grapf'''
 
-    Parameters
-    ==========
-    path_dir: string
-    
-    Return
-    ======
-    path: string
-    name: string, file name from path
-    '''
-
-    def __init__(self, path_dir):
+    def __init__(self, graph: list, name: str):
         super().__init__()
-        self.path = path_dir
-        self.name = self.__take_name_from_path(self.path)
+        self.name = name
+        self.data = graph
+
 
     def read(self):
-        ''' read two columns data by ordinary open method.
-        data could be separated by tab, |, and -.
+        ''' read two columns list from graph generator
         '''
-        data = []
-        result = []
-        with open(self.path) as file:
-            for _, line in enumerate(file):
-                if line.strip():
-                    line = re.sub('[\t|,-]', ' ', line)
-                    tokens = line.split()
-                    if len(tokens) == 2:
-                        result = [int(x) for x in tokens]
-                        data.append(result)
-        return data
-
-    @staticmethod
-    def __take_name_from_path(path_dir):
-        '''
-        helper method. 
-        Take name of file from path
-        '''
-        path_split = path_dir.split('/')
-        return path_split[len(path_split) - 1].split('.')[0]
-
+        return self.data
+    
     @classmethod
-    def generate_inputs(cls, config):
+    def generate_inputs(cls, graphs: list, names: list):
         '''read all files in dir with some ends'''
-        data_dir = config['directory']
-        end = config['end_file']
-        for name in [f for f in listdir(data_dir) if f.endswith(end)]:
-            yield cls(path.join(data_dir, name))
+        for graph, name in zip(graphs, names):
+            yield cls(graph, name)
 
-
-class ProteinList(list):
-    '''Jedna z najlepszych klas jakie napisałem. 
-    Bazuje na rozszerzeniu możliwości listy. 
-    Cleaning operation for Your two columns data.
-    '''
-    def __init__(self, members):
-        super().__init__(members)
-
-    def numpy_array(self):
-        return np.array(self)
-
-    def compute_info(self):
-        array = self.numpy_array()
-        chords = len(array)
-        maxi = array.max()
-        mini = array.min()
-        length = maxi - mini + 1
-        return mini, maxi, length, chords
-
-    def change(self):
-        result = [[row[1], row[0]] if row[0] > row[
-            1] else [row[0], row[1]] for row in self]
-        return ProteinList(result)
-
-    def rem_same_chords(self):
-        result = [list(x) for x in set(tuple(x) for x in self)]
-        return ProteinList(sorted(result))
-
-    def rem_inout(self):
-        return ProteinList([row for row in self if row[0] != row[1]])
-
-    def zero_rem(self):
-        result = self.numpy_array()
-        if 0 in result:
-            result = result + 1
-        return ProteinList(result.tolist())
-
-    def clean(self):
-        return ProteinList(self.change().rem_same_chords().rem_inout().zero_rem())
-
-# dla analiz generujesz już tylko Workera 
-# z określeniem dla niego metody map 
-class ProteinWorker(Worker):
+# ==========================
+# GRAPH WORKER
+# ==========================
+class GraphWorker(Worker):
     ''' class for proteine genus analysis'''
 
     def map(self):
@@ -303,14 +252,14 @@ class ProteinWorker(Worker):
         self.length, self.nr_chord = self.cl_data.compute_info()
         self.genus = self.compute_genus()
 
-
-# dla roznych analiz dodajesz tylko nową klasę z Workerem 
-# i metodą map
-class ProteinAnalysisWorker(Worker):
-    ''' class for devided proteine analysis'''
+# ============================
+# GRAPH ANALYSIS WORKER
+# ============================
+class GraphAnalysisWorker(Worker):
+    ''' class for devided graph analysis'''
 
     def map(self):
-        ''' map work for one protein '''
+        ''' map work for one graph '''
         self.name = self.input_data.name
         self.cl_data = ProteinList(self.input_data.read()).clean()
         self.mini, self.maxi, \
@@ -362,28 +311,33 @@ class ProteinAnalysisWorker(Worker):
                 genuses.append(0)
         return genuses
 
-# to na koncu
 
-def data_analysis(worker_class, input_class, config):
+class FactorizeThread(Thread):
+    ''' multi thread for Worker.map() method'''
+    def __init__(self, worker):
+        super().__init__()
+        self.worker = worker
+
+    def run(self):
+        self.worker = self.worker.map()
+
+
+def data_analysis(worker_class, input_class, graphs, nazwy):
     '''helper for Thread with map() method'''
     threads = []
-    workers = worker_class.create_workers(input_class, config)
+    workers = worker_class.create_workers(input_class, graphs, nazwy)
     for worker in workers:
         thread = FactorizeThread(worker)
         thread.start()
         threads.append(thread)
     for thread in threads:
         thread.join()
-    return workers        
+    return workers     
 
-def protein_genus(config):
+def graph_genus(graphs, names):
     '''run proteins analysis from directory'''
-    return data_analysis(ProteinWorker, ProteinData, config)
+    return data_analysis(GraphWorker, GraphData, graphs, names)
 
-'''
-    Deviding two columns and compute genus from min_length
-    to max_length by one lag. Return object
-'''
-def protein_genus_trace(config):
-    '''run proteins deviding and analysis'''
-    return data_analysis(ProteinAnalysisWorker, ProteinData, config)
+def graph_genus_trace(graphs, names):
+    '''run graph deviding and analysis'''
+    return data_analysis(GraphAnalysisWorker, GraphData, graphs, names)
